@@ -128,8 +128,8 @@ menu = st.sidebar.radio("Navigasi", ["Home", "Data", "Pengujian", "Word Cloud", 
 if menu == "Home":
     st.title("PENERAPAN METODE RANDOM FOREST DALAM ANALISIS SENTIMEN ULASAN DESTINASI WISATA MADURA DENGAN ENSEMBLE FEATURE SELECTION")
     st.markdown("""
-        <h3>Nama: John Doe</h3>
-        <h3>NIM: 1234567890</h3>
+        <h3>Nama: Bagas Pratama Putra</h3>
+        <h3>NIM: 200411100184</h3>
     """, unsafe_allow_html=True)
 
 
