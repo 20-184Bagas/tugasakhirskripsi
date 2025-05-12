@@ -7,5 +7,3 @@ matplotlib>=3.8
 wordcloud>=1.9
 scikit-learn>=1.4
 nltk>=3.8
-PySastrawi>=1.0.1
-sastrawi>=1.0.0
