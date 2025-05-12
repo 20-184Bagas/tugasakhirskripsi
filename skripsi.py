@@ -28,12 +28,8 @@ normalization_dict = load_normalization_dict()
 
 # === FUNGSI DATA & PREPROCESSING ===
 def load_data():
-    df = pd.read_csv("https://raw.githubusercontent.com/20-184Bagas/tugasakhirskripsi/refs/heads/main/data-ulasan-wisata-madura.csv")
-    df["Label"] = df["Label"].str.lower()
-    label_mapping = {"positif": 1, "negatif": -1, "netral": 0}
-    df["Encoded Label"] = df["Label"].map(label_mapping)
-    df["Ulasan"] = df["Ulasan"].astype(str).apply(preprocess_text)
-    return df
+    url = pd.read_csv("https://raw.githubusercontent.com/20-184Bagas/tugasakhirskripsi/refs/heads/main/data-ulasan-wisata-madura.csv") 
+    return url
 
 def normalize_text(text):
     return " ".join([normalization_dict.get(w, w) for w in text.split()])
@@ -48,6 +44,14 @@ def preprocess_text(text):
     normalized = normalize_text(" ".join(tokens))
     return normalized
 
+def load_preprocessed_data():
+    df = pd.read_csv("https://raw.githubusercontent.com/20-184Bagas/tugasakhirskripsi/refs/heads/main/hasil_preprocessing.csv")
+    df["Label"] = df["Label"].str.lower() 
+    label_mapping = {"positif": 1, "negatif": -1, "netral": 0}
+    df["Encoded Label"] = df["Label"].map(label_mapping)
+    df["Ulasan"] = df["Ulasan"].astype(str)
+    return df 
+
 # === SELEKSI FITUR ===
 def chi_square_selection(X, y, alpha=0.0025):
     scores, _ = chi2(X, y)
@@ -56,7 +60,7 @@ def chi_square_selection(X, y, alpha=0.0025):
     selected = df_chi[df_chi["Chi2"] >= chi_crit]["Fitur"].tolist()
     return selected
 
-def info_gain_selection(X_df, y, threshold=0.0025):
+def info_gain_selection(X_df, y, threshold=0.001):
     def entropy(vec):
         probs = vec.value_counts(normalize=True)
         return -np.sum(probs * np.log2(probs))
@@ -114,7 +118,7 @@ def plot_metrics_comparison(results, title):
     st.pyplot(fig)
 
 # === DATA ===
-data = load_data()
+data = load_preprocessed_data()
 vectorizer = TfidfVectorizer()
 X_tfidf = vectorizer.fit_transform(data["Ulasan"])
 X_df = pd.DataFrame(X_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
@@ -132,15 +136,25 @@ if menu == "Home":
         <h3>NIM: 200411100184</h3>
     """, unsafe_allow_html=True)
 
-
-# === DATA ===
 elif menu == "Data":
-    st.header("📄 Data")
-    st.dataframe(data)
+    st.header("Data")
+    
+    # Tab untuk data asli dan data preprocessing
+    tab1, tab2 = st.tabs(["Data Asli", "Data Preprocessing"])
+    
+    with tab1:
+        st.subheader("Data Asli")
+        data_original = load_data()
+        st.dataframe(data_original)
+        
+    with tab2:
+        st.subheader("Data Hasil Preprocessing")
+        data_preprocessed = load_preprocessed_data()
+        st.dataframe(data_preprocessed)
 
 # === WORD CLOUD ===
 elif menu == "Word Cloud":
-    st.header("☁️ Word Cloud")
+    st.header("Word Cloud")
     col1, col2, col3 = st.columns(3)
     for label, col, cmap in zip(["positif", "negatif", "netral"], [col1, col2, col3], ["Greens", "Reds", "Blues"]):
         with col:
@@ -154,13 +168,13 @@ elif menu == "Word Cloud":
 
 # === PENGUJIAN ===
 elif menu == "Pengujian":
-    st.header("🧪 Pengujian Random Forest")
+    st.header("Pengujian Random Forest")
 
     opsi_pengujian = st.radio("Pilih Pengujian", ["Pengujian 1", "Pengujian 2", "Pengujian 3"])
 
     if opsi_pengujian == "Pengujian 1":
-        st.subheader("📌 Pengujian 1: Tanpa Seleksi Fitur (90:10)")
-    
+        st.subheader("Pengujian 1: Tanpa Seleksi Fitur (90:10)")
+        
         # --- Split 90:10 ---
         X_train_90, X_test_10, y_train_90, y_test_10 = train_test_split(X_df, y, test_size=0.1, random_state=42)
         model_90 = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -172,17 +186,20 @@ elif menu == "Pengujian":
         prec_90 = report_90['macro avg']['precision']
         rec_90 = report_90['macro avg']['recall']
         f1_90 = report_90['macro avg']['f1-score']
-        scores_90 = [round(acc_90 * 100), round(prec_90 * 100), round(rec_90 * 100), round(f1_90 * 100)]
-        categories = ['Accuracy', 'Precission', 'Recall', 'F1_Score']
+        
+        # Ubah ke format desimal 1 digit
+        scores_90 = [f"{acc_90*100:.1f}%", f"{prec_90*100:.1f}%", f"{rec_90*100:.1f}%", f"{f1_90*100:.1f}%"]
+        categories = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
 
         cm_90 = confusion_matrix(y_test_10, y_pred_10, labels=[-1, 0, 1])
 
         col1, col2 = st.columns(2)
         with col1:
             fig1, ax1 = plt.subplots(figsize=(7, 5))
-            bars1 = ax1.bar(categories, scores_90, color='blue')
+            bars1 = ax1.bar(categories, [float(x.strip('%')) for x in scores_90], color='blue')
             for bar, score in zip(bars1, scores_90):
-                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() - 5, f"{score}%", ha='center', va='bottom', color='white', fontsize=11)
+                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() - 5, 
+                        score, ha='center', va='bottom', color='white', fontsize=11)
             ax1.set_ylabel("Persentase")
             ax1.set_title("Klasifikasi 90:10", fontsize=14)
             ax1.set_ylim(0, 105)
@@ -198,9 +215,9 @@ elif menu == "Pengujian":
             ax_cm90.set_title("Confusion Matrix (90:10)")
             st.pyplot(fig_cm90)
 
-    # --- Split 80:20 ---
-        st.subheader("📌 Pengujian 1: Tanpa Seleksi Fitur (80:20)")
-    
+        # --- Split 80:20 ---
+        st.subheader("Pengujian 1: Tanpa Seleksi Fitur (80:20)")
+        
         X_train_80, X_test_20, y_train_80, y_test_20 = train_test_split(X_df, y, test_size=0.2, random_state=42)
         model_80 = RandomForestClassifier(n_estimators=100, random_state=42)
         model_80.fit(X_train_80, y_train_80)
@@ -211,16 +228,19 @@ elif menu == "Pengujian":
         prec_80 = report_80['macro avg']['precision']
         rec_80 = report_80['macro avg']['recall']
         f1_80 = report_80['macro avg']['f1-score']
-        scores_80 = [round(acc_80 * 100), round(prec_80 * 100), round(rec_80 * 100), round(f1_80 * 100)]
+        
+        # Ubah ke format desimal 1 digit
+        scores_80 = [f"{acc_80*100:.1f}%", f"{prec_80*100:.1f}%", f"{rec_80*100:.1f}%", f"{f1_80*100:.1f}%"]
 
         cm_80 = confusion_matrix(y_test_20, y_pred_20, labels=[-1, 0, 1])
 
         col3, col4 = st.columns(2)
         with col3:
             fig2, ax2 = plt.subplots(figsize=(7, 5))
-            bars2 = ax2.bar(categories, scores_80, color='green')
+            bars2 = ax2.bar(categories, [float(x.strip('%')) for x in scores_80], color='green')
             for bar, score in zip(bars2, scores_80):
-                ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() - 5, f"{score}%", ha='center', va='bottom', color='white', fontsize=11)
+                ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() - 5, 
+                        score, ha='center', va='bottom', color='white', fontsize=11)
             ax2.set_ylabel("Persentase")
             ax2.set_title("Klasifikasi 80:20", fontsize=14)
             ax2.set_ylim(0, 105)
@@ -235,9 +255,9 @@ elif menu == "Pengujian":
             ax_cm80.set_ylabel("True Label")
             ax_cm80.set_title("Confusion Matrix (80:20)")
             st.pyplot(fig_cm80)
-        
+
     elif opsi_pengujian == "Pengujian 2":
-        st.subheader("📌 Pengujian 2: Evaluasi Threshold Seleksi Fitur")
+        st.subheader("Pengujian 2: Evaluasi Threshold Seleksi Fitur")
     
         def evaluasi_dan_tampil(X_selected, y, metode_name, threshold):
         # Evaluasi kedua split
@@ -326,25 +346,25 @@ elif menu == "Pengujian":
     # =================================================
     # 1. Information Gain
     # =================================================
-        st.markdown("## 🔷 Hasil Information Gain")
+        st.markdown("Hasil Information Gain")
         ig_thresholds = [0.0025, 0.005, 0.001]
         for thresh in ig_thresholds:
-            st.markdown(f"### 🔹 IG Threshold = {thresh}")
+            st.markdown(f"IG Threshold = {thresh}")
             ig_features = info_gain_selection(X_df, y, threshold=thresh)
             evaluasi_dan_tampil(X_df[ig_features], y, "Information Gain", thresh)
     
     # ================================================
     # 2. Chi-Square
     # ================================================
-        st.markdown("## 🔶 Hasil Chi-Square")
+        st.markdown("Hasil Chi-Square")
         chi_alphas = [0.0025, 0.005, 0.001]
         for alpha in chi_alphas:
-            st.markdown(f"### 🔸 Chi-Square Alpha = {alpha}")
+            st.markdown(f"Chi-Square Alpha = {alpha}")
             chi_features = chi_square_selection(X_df, y, alpha=alpha)
             evaluasi_dan_tampil(X_df[chi_features], y, "Chi-Square", alpha)
 
     elif opsi_pengujian == "Pengujian 3":
-        st.subheader("📌 Pengujian 3: Ensemble Feature Selection")
+        st.subheader("Pengujian 3: Ensemble Feature Selection")
 
         # Hitung fitur seleksi
         ig_features = info_gain_selection(X_df, y)
@@ -449,16 +469,16 @@ elif menu == "Pengujian":
                 st.error(f"Terjadi error: {str(e)}")
 
         # --- Bagian 1: Ensemble Intersection ---
-        st.markdown("### 🔸 Ensemble Intersection (IG ∩ Chi-Square)")
+        st.markdown("Ensemble Intersection (IG ∩ Chi-Square)")
         evaluasi_model(X_df[intersection_features], y, "Intersection")
 
         # --- Bagian 2: Ensemble Union ---
-        st.markdown("### 🔸 Ensemble Union (IG ∪ Chi-Square)")
+        st.markdown("Ensemble Union (IG ∪ Chi-Square)")
         evaluasi_model(X_df[union_features], y, "Union")
 
 # === PREDIKSI BARU ===
 elif menu == "Prediksi Baru":
-    st.header("🔮 Prediksi Ulasan Baru")
+    st.header("Prediksi Ulasan Baru")
     user_input = st.text_area("Masukkan teks ulasan:")
     
     if st.button("Prediksi"):
@@ -472,12 +492,12 @@ elif menu == "Prediksi Baru":
         input_df = pd.DataFrame(input_vec.toarray(), columns=vectorizer.get_feature_names_out())
         
         # Gunakan model dari Pengujian 1 (split 90:10)
-        model_90 = RandomForestClassifier(n_estimators=100, random_state=42)
-        model_90.fit(X_df, y)  # Asumsi X_df dan y sudah didefinisikan sebelumnya
+        model_80 = RandomForestClassifier(n_estimators=100, random_state=42)
+        model_80.fit(X_df, y)  
         
         # Prediksi
-        pred = model_90.predict(input_df)[0]
-        proba = model_90.predict_proba(input_df)[0]
+        pred = model_80.predict(input_df)[0]
+        proba = model_80.predict_proba(input_df)[0]
         
         # Mapping label dan warna
         label_map = {-1: "Negatif", 0: "Netral", 1: "Positif"}
@@ -497,6 +517,6 @@ elif menu == "Prediksi Baru":
         )
         
         # Debug info dengan expander agar lebih rapi
-        with st.expander("🔍 Detail Preprocessing"):
+        with st.expander("Detail Preprocessing"):
             st.write(f"**Teks setelah preprocessing:**\n{input_clean}")
             st.write(f"**Kata-kata penting yang terdeteksi:**\n{input_df.loc[:, (input_df != 0).any(axis=0)].columns.tolist()}")
