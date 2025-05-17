@@ -597,7 +597,7 @@ elif menu == "Pengujian":
                             xticklabels=["Negatif", "Netral", "Positif"],
                             yticklabels=["Negatif", "Netral", "Positif"],
                             cbar=False, ax=ax_cm)
-                ax_cm.set_title(f'Alpha {ig_thresholds[i]} ({split})')
+                ax_cm.set_title(f'Threshold {ig_thresholds[i]} ({split})')
                 ax_cm.set_xlabel("Predicted")
                 ax_cm.set_ylabel("Actual")
                 st.pyplot(fig_cm)
