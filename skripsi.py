@@ -54,7 +54,7 @@ def load_preprocessed_data():
     return df 
 
 # === SELEKSI FITUR ===
-def chi_square_selection(count_df, y, alpha=0.0025):
+def chi_square_selection(count_df, y, alpha=0.001):
     scores, _ = chi2(count_df, y)
     df_chi = pd.DataFrame({"Fitur": count_df.columns, "Chi2": scores})
     chi_crit = chi2_table.ppf(1 - alpha, df=len(set(y)) - 1)
