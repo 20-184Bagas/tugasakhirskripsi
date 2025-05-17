@@ -6,7 +6,7 @@ import seaborn as sns
 import re
 import string
 from wordcloud import WordCloud
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
@@ -15,7 +15,8 @@ from scipy.stats import chi2 as chi2_table
 from nltk.corpus import stopwords
 from sklearn.metrics import confusion_matrix
 import nltk
-nltk.download('stopwords')
+from imblearn.over_sampling import SMOTE
+from matplotlib.patches import Patch
 
 # === NORMALISASI KAMUS ===
 @st.cache_data
@@ -53,9 +54,9 @@ def load_preprocessed_data():
     return df 
 
 # === SELEKSI FITUR ===
-def chi_square_selection(X, y, alpha=0.0025):
-    scores, _ = chi2(X, y)
-    df_chi = pd.DataFrame({"Fitur": X.columns, "Chi2": scores})
+def chi_square_selection(count_df, y, alpha=0.0025):
+    scores, _ = chi2(count_df, y)
+    df_chi = pd.DataFrame({"Fitur": count_df.columns, "Chi2": scores})
     chi_crit = chi2_table.ppf(1 - alpha, df=len(set(y)) - 1)
     selected = df_chi[df_chi["Chi2"] >= chi_crit]["Fitur"].tolist()
     return selected
@@ -81,7 +82,7 @@ def info_gain_selection(X_df, y, threshold=0.001):
 def evaluate_metrics(X, y, test_sizes=[0.1, 0.2]):
     results = {}
     for ts in test_sizes:
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=ts, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=ts, random_state=42, stratify=y)
         model = RandomForestClassifier(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
@@ -122,11 +123,14 @@ data = load_preprocessed_data()
 vectorizer = TfidfVectorizer()
 X_tfidf = vectorizer.fit_transform(data["Ulasan"])
 X_df = pd.DataFrame(X_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
+count_vectorizer = CountVectorizer()
+X_count = count_vectorizer.fit_transform(data["Ulasan"])
+count_df = pd.DataFrame(X_count.toarray(), columns=count_vectorizer.get_feature_names_out())
 y = data["Encoded Label"]
 
 # === SIDEBAR ===
 st.sidebar.title("Menu")
-menu = st.sidebar.radio("Navigasi", ["Home", "Data", "Pengujian", "Word Cloud", "Prediksi Baru"])
+menu = st.sidebar.radio("Navigasi", ["Home", "Data", "Pengujian", "Report", "Word Cloud", "Prediksi Baru"])
 
 # === HOME ===
 if menu == "Home":
@@ -170,13 +174,13 @@ elif menu == "Word Cloud":
 elif menu == "Pengujian":
     st.header("Pengujian Random Forest")
 
-    opsi_pengujian = st.radio("Pilih Pengujian", ["Pengujian 1", "Pengujian 2", "Pengujian 3"])
+    opsi_pengujian = st.radio("Pilih Pengujian:", ["Pengujian 1 (Tanpa Seleksi Fitur)", "Pengujian 2 (Masing-masing Seleksi Fitur)", "Pengujian 3 (Ensemble Seleksi Fitur)", "Pengujian 4 (Masing-masing Seleksi Fitur dengan SMOTE)"])
 
-    if opsi_pengujian == "Pengujian 1":
-        st.subheader("Pengujian 1: Tanpa Seleksi Fitur (90:10)")
+    if opsi_pengujian == "Pengujian 1 (Tanpa Seleksi Fitur)":
+        st.subheader("Tanpa Seleksi Fitur (90:10)")
         
         # --- Split 90:10 ---
-        X_train_90, X_test_10, y_train_90, y_test_10 = train_test_split(X_df, y, test_size=0.1, random_state=42)
+        X_train_90, X_test_10, y_train_90, y_test_10 = train_test_split(X_df, y, test_size=0.1, random_state=42, stratify=y)
         model_90 = RandomForestClassifier(n_estimators=100, random_state=42)
         model_90.fit(X_train_90, y_train_90)
         y_pred_10 = model_90.predict(X_test_10)
@@ -216,9 +220,9 @@ elif menu == "Pengujian":
             st.pyplot(fig_cm90)
 
         # --- Split 80:20 ---
-        st.subheader("Pengujian 1: Tanpa Seleksi Fitur (80:20)")
+        st.subheader("Tanpa Seleksi Fitur (80:20)")
         
-        X_train_80, X_test_20, y_train_80, y_test_20 = train_test_split(X_df, y, test_size=0.2, random_state=42)
+        X_train_80, X_test_20, y_train_80, y_test_20 = train_test_split(X_df, y, test_size=0.2, random_state=42, stratify=y)
         model_80 = RandomForestClassifier(n_estimators=100, random_state=42)
         model_80.fit(X_train_80, y_train_80)
         y_pred_20 = model_80.predict(X_test_20)
@@ -256,150 +260,187 @@ elif menu == "Pengujian":
             ax_cm80.set_title("Confusion Matrix (80:20)")
             st.pyplot(fig_cm80)
 
-    elif opsi_pengujian == "Pengujian 2":
-        st.subheader("Pengujian 2: Evaluasi Threshold Seleksi Fitur")
-    
-        def evaluasi_dan_tampil(X_selected, y, metode_name, threshold):
-        # Evaluasi kedua split
+
+    elif opsi_pengujian == "Pengujian 2 (Masing-masing Seleksi Fitur)":
+        st.subheader("Pengujian 2: Masing-masing Seleksi Fitur")
+
+        def evaluasi_dua_split(X_selected, y):
             X_train90, X_test10, y_train90, y_test10 = train_test_split(X_selected, y, test_size=0.1, random_state=42)
             X_train80, X_test20, y_train80, y_test20 = train_test_split(X_selected, y, test_size=0.2, random_state=42)
-        
-            model = RandomForestClassifier(n_estimators=100, random_state=42)
-        
-            # Hitung metrik untuk 90:10
-            model.fit(X_train90, y_train90)
-            y_pred10 = model.predict(X_test10)
-            report90 = classification_report(y_test10, y_pred10, output_dict=True)
-        
-            # Hitung metrik untuk 80:20
-            model.fit(X_train80, y_train80)
-            y_pred20 = model.predict(X_test20)
-            report80 = classification_report(y_test20, y_pred20, output_dict=True)
-        
-            # Tentukan split terbaik
-            acc90 = report90['accuracy']
-            acc80 = report80['accuracy']
-            best_split = '90:10' if acc90 >= acc80 else '80:20'
-            cm_data = (y_test10, y_pred10) if best_split == '90:10' else (y_test20, y_pred20)
-            cm_color = 'Blues' if best_split == '90:10' else 'Greens'
-        
-            # Buat layout kolom
-            col1, col2 = st.columns(2)
-        
-            with col1:
-                # Grafik perbandingan metrik
-                metrics = ['accuracy', 'precision', 'recall', 'f1-score']
-                labels = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-            
-                fig_metrics, ax = plt.subplots(figsize=(7, 5))
-            
-                # Data untuk plotting
-                values90 = [report90[m] if m == 'accuracy' else report90['macro avg'][m] for m in metrics]
-                values80 = [report80[m] if m == 'accuracy' else report80['macro avg'][m] for m in metrics]
-            
-                # Konversi ke persentase
-                values90_pct = [v * 100 for v in values90]
-                values80_pct = [v * 100 for v in values80]
-            
-                # Plot bars
-                bar_width = 0.35
-                index = np.arange(len(metrics))
-            
-                bars90 = ax.bar(index - bar_width/2, values90_pct, bar_width, 
-                          label='90:10', color='blue', edgecolor='black')
-                bars80 = ax.bar(index + bar_width/2, values80_pct, bar_width, 
-                          label='80:20', color='green', edgecolor='black')
-            
-                # Formatting
-                ax.set_title('Perbandingan Klasifikasi pada Pembagian Data 90:10 dan 80:20', 
-                            pad=20, fontsize=12, fontweight='bold')
-                ax.set_xticks(index)
-                ax.set_xticklabels(labels, fontsize=10)
-                ax.set_ylabel('Persentase (%)', fontsize=10)
-                ax.set_ylim(0, 110)
-                ax.grid(axis='y', linestyle='--', alpha=0.7)
-                ax.legend(fontsize=9, framealpha=0.9)
-            
-                # Tambah nilai di atas bar
-                for bars in [bars90, bars80]:
-                    for bar in bars:
-                        height = bar.get_height()
-                        ax.text(bar.get_x() + bar.get_width()/2., height + 1,
-                                f'{height:.1f}%',
-                                ha='center', va='bottom', fontsize=9)
-            
-                plt.tight_layout()
-                st.pyplot(fig_metrics)
-        
-            with col2:
-                # Confusion matrix
-                cm = confusion_matrix(cm_data[0], cm_data[1], labels=[-1, 0, 1])
-                fig_cm, ax = plt.subplots(figsize=(6, 4))
-                sns.heatmap(cm, annot=True, fmt="d", cmap=cm_color,
-                        xticklabels=["Negatif", "Netral", "Positif"],
-                        yticklabels=["Negatif", "Netral", "Positif"],
-                        ax=ax, cbar=False)
-                ax.set_title(f'Confusion Matrix ({best_split})', pad=15, fontsize=12)
-                ax.set_xlabel("Predicted", fontsize=10)
-                ax.set_ylabel("Actual", fontsize=10)
-                st.pyplot(fig_cm)
-    # =================================================
-    # 1. Information Gain
-    # =================================================
-        st.markdown("Hasil Information Gain")
-        ig_thresholds = [0.0025, 0.005, 0.001]
-        for thresh in ig_thresholds:
-            st.markdown(f"IG Threshold = {thresh}")
-            ig_features = info_gain_selection(X_df, y, threshold=thresh)
-            evaluasi_dan_tampil(X_df[ig_features], y, "Information Gain", thresh)
-    
-    # ================================================
-    # 2. Chi-Square
-    # ================================================
-        st.markdown("Hasil Chi-Square")
-        chi_alphas = [0.0025, 0.005, 0.001]
-        for alpha in chi_alphas:
-            st.markdown(f"Chi-Square Alpha = {alpha}")
-            chi_features = chi_square_selection(X_df, y, alpha=alpha)
-            evaluasi_dan_tampil(X_df[chi_features], y, "Chi-Square", alpha)
 
-    elif opsi_pengujian == "Pengujian 3":
+            model = RandomForestClassifier(n_estimators=100, random_state=42)
+
+            # Split 90:10
+            model.fit(X_train90, y_train90)
+            y_pred90 = model.predict(X_test10)
+            acc90 = accuracy_score(y_test10, y_pred90)
+            cm90 = confusion_matrix(y_test10, y_pred90)
+
+            # Split 80:20
+            model.fit(X_train80, y_train80)
+            y_pred80 = model.predict(X_test20)
+            acc80 = accuracy_score(y_test20, y_pred80)
+            cm80 = confusion_matrix(y_test20, y_pred80)
+
+            return acc90, acc80, cm90, cm80
+
+        # ======================================
+        # Information Gain
+        # ======================================
+        st.markdown("### Hasil Information Gain")
+        ig_thresholds = [0.001, 0.0025, 0.005]
+        ig_acc_90 = []
+        ig_acc_80 = []
+        ig_conf_matrices = []
+
+        for thresh in ig_thresholds:
+            ig_features = info_gain_selection(X_df, y, threshold=thresh)
+            acc90, acc80, cm90, cm80 = evaluasi_dua_split(X_df[ig_features], y)
+            ig_acc_90.append(acc90)
+            ig_acc_80.append(acc80)
+
+            # Simpan confusion matrix terbaik untuk threshold ini
+            if acc90 >= acc80:
+                ig_conf_matrices.append((thresh, '90:10', cm90))
+            else:
+                ig_conf_matrices.append((thresh, '80:20', cm80))
+
+        # Grafik Akurasi IG
+        fig_ig, ax_ig = plt.subplots(figsize=(8, 5))
+        index = np.arange(len(ig_thresholds))
+        bar_width = 0.35
+
+        bars_90 = ax_ig.bar(index - bar_width/2, [a*100 for a in ig_acc_90], bar_width, label='90:10 (Biru)', color='blue', edgecolor='black')
+        bars_80 = ax_ig.bar(index + bar_width/2, [a*100 for a in ig_acc_80], bar_width, label='80:20 (Hijau)', color='green', edgecolor='black')
+
+        ax_ig.set_title("Akurasi Information Gain berdasarkan Threshold")
+        ax_ig.set_xticks(index)
+        ax_ig.set_xticklabels([str(t) for t in ig_thresholds])
+        ax_ig.set_ylabel("Akurasi (%)")
+        ax_ig.set_ylim(0, 100)
+        ax_ig.legend()
+        for i in range(len(index)):
+            ax_ig.text(index[i] - bar_width/2, ig_acc_90[i]*100 + 1, f"{ig_acc_90[i]*100:.2f}%", ha='center')
+            ax_ig.text(index[i] + bar_width/2, ig_acc_80[i]*100 + 1, f"{ig_acc_80[i]*100:.2f}%", ha='center')
+        st.pyplot(fig_ig)
+
+        # Confusion Matrix terbaik IG
+        st.markdown("#### Confusion Matrix Terbaik (Information Gain)")
+        cols_ig = st.columns(3)
+        for i, (thresh, split, cm) in enumerate(ig_conf_matrices):
+            with cols_ig[i]:
+                st.markdown(f"**Threshold IG: {thresh}**<br>Split: **{split}**", unsafe_allow_html=True)
+                fig_cm, ax = plt.subplots(figsize=(4, 3.5))
+                cmap = 'Blues' if split == '90:10' else 'Greens'
+                sns.heatmap(cm, annot=True, fmt="d", cmap=cmap,
+                            xticklabels=["Negatif", "Netral", "Positif"],
+                            yticklabels=["Negatif", "Netral", "Positif"],
+                            cbar=False, ax=ax)
+                ax.set_title(None)
+                ax.set_xlabel("Predicted", fontsize=9)
+                ax.set_ylabel("Actual", fontsize=9)
+                st.pyplot(fig_cm)
+
+        # ======================================
+        # Chi-Square
+        # ======================================
+        st.markdown("### Hasil Chi-Square")
+        chi_alphas = [0.001, 0.0025, 0.005]
+        chi_acc_90 = []
+        chi_acc_80 = []
+        chi_conf_matrices = []
+
+        for alpha in chi_alphas:
+            chi_features = chi_square_selection(count_df, y, alpha=alpha)
+            acc90, acc80, cm90, cm80 = evaluasi_dua_split(count_df[chi_features], y)
+            chi_acc_90.append(acc90)
+            chi_acc_80.append(acc80)
+
+            # Simpan confusion matrix terbaik
+            if acc90 >= acc80:
+                chi_conf_matrices.append((alpha, '90:10', cm90))
+            else:
+                chi_conf_matrices.append((alpha, '80:20', cm80))
+
+        # Grafik Akurasi Chi
+        fig_chi, ax_chi = plt.subplots(figsize=(8, 5))
+        index = np.arange(len(chi_alphas))
+        bars_90 = ax_chi.bar(index - bar_width/2, [a*100 for a in chi_acc_90], bar_width, label='90:10 (Biru)', color='blue', edgecolor='black')
+        bars_80 = ax_chi.bar(index + bar_width/2, [a*100 for a in chi_acc_80], bar_width, label='80:20 (Hijau)', color='green', edgecolor='black')
+
+        ax_chi.set_title("Akurasi Chi-Square berdasarkan Alpha")
+        ax_chi.set_xticks(index)
+        ax_chi.set_xticklabels([str(a) for a in chi_alphas])
+        ax_chi.set_ylabel("Akurasi (%)")
+        ax_chi.set_ylim(0, 100)
+        ax_chi.legend()
+        for i in range(len(index)):
+            ax_chi.text(index[i] - bar_width/2, chi_acc_90[i]*100 + 1, f"{chi_acc_90[i]*100:.2f}%", ha='center')
+            ax_chi.text(index[i] + bar_width/2, chi_acc_80[i]*100 + 1, f"{chi_acc_80[i]*100:.2f}%", ha='center')
+        st.pyplot(fig_chi)
+
+        # Confusion Matrix terbaik Chi
+        st.markdown("#### Confusion Matrix Terbaik (Chi-Square)")
+        cols_chi = st.columns(3)
+        for i, (alpha, split, cm) in enumerate(chi_conf_matrices):
+            with cols_chi[i]:
+                st.markdown(f"**Alpha: {alpha}**<br>Split: **{split}**", unsafe_allow_html=True)
+                fig_cm, ax = plt.subplots(figsize=(4, 3.5))
+                cmap = 'Blues' if split == '90:10' else 'Greens'
+                sns.heatmap(cm, annot=True, fmt="d", cmap=cmap,
+                            xticklabels=["Negatif", "Netral", "Positif"],
+                            yticklabels=["Negatif", "Netral", "Positif"],
+                            cbar=False, ax=ax)
+                ax.set_title(None)
+                ax.set_xlabel("Predicted", fontsize=9)
+                ax.set_ylabel("Actual", fontsize=9)
+                st.pyplot(fig_cm)
+
+    elif opsi_pengujian == "Pengujian 3 (Ensemble Seleksi Fitur)":
         st.subheader("Pengujian 3: Ensemble Feature Selection")
 
-        # Hitung fitur seleksi
-        ig_features = info_gain_selection(X_df, y)
-        chi_features = chi_square_selection(X_df, y)
+        # --- Langkah 1: Seleksi fitur ---
+        ig_features = info_gain_selection(X_df, y)          # IG dari TF-IDF
+        chi_features = chi_square_selection(count_df, y)    # Chi-Square dari CountVectorizer
 
+        # Ensemble features
         intersection_features = list(set(ig_features) & set(chi_features))
         union_features = list(set(ig_features) | set(chi_features))
 
+        # --- Langkah 2: Gabungkan fitur dari dua sumber sesuai hasil ensemble ---
+        def ambil_fitur_terpilih(feature_list):
+            # Ambil kolom dari X_df dan count_df jika nama fitur cocok
+            tfidf_part = X_df[[feat for feat in feature_list if feat in X_df.columns]]
+            count_part = count_df[[feat for feat in feature_list if feat in count_df.columns]]
+            return pd.concat([tfidf_part, count_part], axis=1)
+
+        X_intersection = ambil_fitur_terpilih(intersection_features)
+        X_union = ambil_fitur_terpilih(union_features)
+
+        # --- Langkah 3: Fungsi evaluasi model ---
         def evaluasi_model(X, y, judul):
             try:
-                # Evaluasi kedua split
+                # Split 90:10 dan 80:20
                 X_train90, X_test10, y_train90, y_test10 = train_test_split(X, y, test_size=0.1, random_state=42)
                 X_train80, X_test20, y_train80, y_test20 = train_test_split(X, y, test_size=0.2, random_state=42)
                 
                 model = RandomForestClassifier(n_estimators=100, random_state=42)
-                
-                # Hitung metrik untuk 90:10
+
+                # Train & predict
                 model.fit(X_train90, y_train90)
                 y_pred10 = model.predict(X_test10)
                 report90 = classification_report(y_test10, y_pred10, output_dict=True)
-                
-                # Hitung metrik untuk 80:20
+
                 model.fit(X_train80, y_train80)
                 y_pred20 = model.predict(X_test20)
                 report80 = classification_report(y_test20, y_pred20, output_dict=True)
-                
-                # Buat layout kolom
+
+                # Layout hasil
                 col1, col2 = st.columns(2)
-                
                 with col1:
-                    # Grafik perbandingan
+                    # Grafik metrik
                     fig, ax = plt.subplots(figsize=(7, 5))
                     metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-                    
-                    # Konversi ke persentase dengan 1 desimal
                     values90 = [
                         round(report90['accuracy'] * 100, 1),
                         round(report90['macro avg']['precision'] * 100, 1),
@@ -412,39 +453,32 @@ elif menu == "Pengujian":
                         round(report80['macro avg']['recall'] * 100, 1),
                         round(report80['macro avg']['f1-score'] * 100, 1)
                     ]
-                    
-                    # Plot bars
                     x = np.arange(len(metrics))
                     width = 0.35
-                    
                     bars90 = ax.bar(x - width/2, values90, width, label='90:10', color='blue', edgecolor='black')
                     bars80 = ax.bar(x + width/2, values80, width, label='80:20', color='green', edgecolor='black')
-                    
-                    # Formatting
-                    ax.set_title('Perbandingan Klasifikasi pada Pembagian Data 90:10 dan 80:20', 
+
+                    ax.set_title('Perbandingan Klasifikasi pada Pembagian Data 90:10 dan 80:20',
                                 pad=20, fontsize=14, fontweight='bold')
                     ax.set_xticks(x)
                     ax.set_xticklabels(metrics, fontsize=12)
                     ax.set_ylabel('Percentage (%)', fontsize=12)
                     ax.set_ylim(0, 110)
                     ax.grid(axis='y', linestyle='--', alpha=0.3)
-                    
-                    # Nilai di atas bar (format XX.X% dengan font hitam)
+
                     for bars in [bars90, bars80]:
                         for bar in bars:
                             height = bar.get_height()
-                            ax.text(bar.get_x() + bar.get_width()/2., 
-                                    height + 1,  # Posisi 1% di atas bar
-                                    f'{height:.1f}%', 
-                                    ha='center', 
+                            ax.text(bar.get_x() + bar.get_width()/2.,
+                                    height + 1,
+                                    f'{height:.1f}%',
+                                    ha='center',
                                     va='bottom',
-                                    color='black',  # Warna font hitam
-                                    fontsize=11,
-                                    fontweight='normal')
-                    
+                                    color='black',
+                                    fontsize=11)
                     ax.legend(loc='upper right', framealpha=1, shadow=True)
                     st.pyplot(fig)
-                
+
                 with col2:
                     # Confusion matrix dari split terbaik
                     best_acc = max(report90['accuracy'], report80['accuracy'])
@@ -456,25 +490,406 @@ elif menu == "Pengujian":
                         cm = confusion_matrix(y_test20, y_pred20, labels=[-1, 0, 1])
                         cm_color = 'Greens'
                         split_label = '80:20'
-                    
+
                     fig_cm, ax = plt.subplots(figsize=(6, 4))
                     sns.heatmap(cm, annot=True, fmt="d", cmap=cm_color,
-                            xticklabels=["Negatif", "Netral", "Positif"],
-                            yticklabels=["Negatif", "Netral", "Positif"], ax=ax)
+                                xticklabels=["Negatif", "Netral", "Positif"],
+                                yticklabels=["Negatif", "Netral", "Positif"], ax=ax)
                     ax.set_title(f'Confusion Matrix ({split_label})\nAkurasi: {best_acc*100:.1f}%', 
                                 fontsize=12)
                     st.pyplot(fig_cm)
-                    
+
             except Exception as e:
                 st.error(f"Terjadi error: {str(e)}")
 
-        # --- Bagian 1: Ensemble Intersection ---
-        st.markdown("Ensemble Intersection (IG ∩ Chi-Square)")
-        evaluasi_model(X_df[intersection_features], y, "Intersection")
+        # --- Langkah 4: Evaluasi intersection dan union ---
+        st.markdown("### Ensemble Intersection (IG ∩ Chi-Square)")
+        evaluasi_model(X_intersection, y, "Intersection")
 
-        # --- Bagian 2: Ensemble Union ---
-        st.markdown("Ensemble Union (IG ∪ Chi-Square)")
-        evaluasi_model(X_df[union_features], y, "Union")
+        st.markdown("### Ensemble Union (IG ∪ Chi-Square)")
+        evaluasi_model(X_union, y, "Union")
+
+    elif opsi_pengujian == "Pengujian 4 (Masing-masing Seleksi Fitur dengan SMOTE)":
+        st.subheader("Pengujian 4: Masing-masing Seleksi Fitur dengan SMOTE")
+
+        def evaluasi_smote(X_selected, y):
+            acc_90_list, acc_80_list, best_cm_info = [], [], []
+
+            for X_feat in X_selected:
+                # Split data
+                X_train90, X_test10, y_train90, y_test10 = train_test_split(X_feat, y, test_size=0.1, random_state=42)
+                X_train80, X_test20, y_train80, y_test20 = train_test_split(X_feat, y, test_size=0.2, random_state=42)
+
+                # SMOTE
+                sm = SMOTE(random_state=42)
+                X_train90_sm, y_train90_sm = sm.fit_resample(X_train90, y_train90)
+                X_train80_sm, y_train80_sm = sm.fit_resample(X_train80, y_train80)
+
+                # Model
+                model = RandomForestClassifier(n_estimators=100, random_state=42)
+                
+                # Evaluasi 90:10
+                model.fit(X_train90_sm, y_train90_sm)
+                y_pred10 = model.predict(X_test10)
+                acc90 = accuracy_score(y_test10, y_pred10)
+                
+                # Evaluasi 80:20
+                model.fit(X_train80_sm, y_train80_sm)
+                y_pred20 = model.predict(X_test20)
+                acc80 = accuracy_score(y_test20, y_pred20)
+
+                # Simpan hasil
+                acc_90_list.append(acc90)
+                acc_80_list.append(acc80)
+
+                if acc90 >= acc80:
+                    best_cm_info.append((y_test10, y_pred10, '90:10'))
+                else:
+                    best_cm_info.append((y_test20, y_pred20, '80:20'))
+
+            return acc_90_list, acc_80_list, best_cm_info
+
+        # ====================
+        # 1. Information Gain
+        # ====================
+        st.markdown("### Hasil Information Gain + SMOTE")
+        ig_thresholds = [0.001, 0.0025, 0.005]
+        ig_features = [info_gain_selection(X_df, y, threshold=t) for t in ig_thresholds]
+        X_ig_selected = [X_df[feat] for feat in ig_features]
+
+        acc90_ig, acc80_ig, best_cm_ig = evaluasi_smote(X_ig_selected, y)
+
+        # Visualisasi IG
+        x = np.arange(len(ig_thresholds))
+        width = 0.35
+        fig1, ax1 = plt.subplots(figsize=(10, 5))
+        bars1 = ax1.bar(x - width/2, [a * 100 for a in acc90_ig], width, label='90:10', color='blue', edgecolor='black')
+        bars2 = ax1.bar(x + width/2, [a * 100 for a in acc80_ig], width, label='80:20', color='green', edgecolor='black')
+
+        ax1.set_xlabel('Threshold IG')
+        ax1.set_ylabel('Akurasi (%)')
+        ax1.set_title('Akurasi Random Forest + SMOTE berdasarkan Threshold IG')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels([str(t) for t in ig_thresholds])
+        ax1.set_ylim(0, 110)
+        ax1.legend()
+
+        def autolabel(bars):
+            for bar in bars:
+                height = bar.get_height()
+                ax1.annotate(f'{height:.2f}%', xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3), textcoords="offset points",
+                            ha='center', va='bottom', fontsize=9)
+
+        autolabel(bars1)
+        autolabel(bars2)
+        st.pyplot(fig1)
+
+        # Confusion matrix IG
+        st.markdown("#### Confusion Matrix IG")
+        cols = st.columns(len(ig_thresholds))
+        for i, col in enumerate(cols):
+            with col:
+                y_true, y_pred, split = best_cm_ig[i]
+                cm = confusion_matrix(y_true, y_pred, labels=[-1, 0, 1])
+                fig_cm, ax_cm = plt.subplots()
+                sns.heatmap(cm, annot=True, fmt="d", cmap='Blues' if split == '90:10' else 'Greens',
+                            xticklabels=["Negatif", "Netral", "Positif"],
+                            yticklabels=["Negatif", "Netral", "Positif"],
+                            cbar=False, ax=ax_cm)
+                ax_cm.set_title(f'Alpha {ig_thresholds[i]} ({split})')
+                ax_cm.set_xlabel("Predicted")
+                ax_cm.set_ylabel("Actual")
+                st.pyplot(fig_cm)
+
+        # ====================
+        # 2. Chi-Square
+        # ====================
+        st.markdown("### Hasil Chi-Square + SMOTE")
+        chi_alphas = [0.001, 0.0025, 0.005]
+        chi_features = [chi_square_selection(count_df, y, alpha=a) for a in chi_alphas]
+        X_chi_selected = [count_df[feat] for feat in chi_features]
+
+        acc90_chi, acc80_chi, best_cm_chi = evaluasi_smote(X_chi_selected, y)
+
+        # Visualisasi Chi-Square
+        x = np.arange(len(chi_alphas))
+        fig2, ax2 = plt.subplots(figsize=(10, 5))
+        bars1 = ax2.bar(x - width/2, [a * 100 for a in acc90_chi], width, label='90:10', color='blue', edgecolor='black')
+        bars2 = ax2.bar(x + width/2, [a * 100 for a in acc80_chi], width, label='80:20', color='green', edgecolor='black')
+
+        ax2.set_xlabel('Alpha Chi-Square')
+        ax2.set_ylabel('Akurasi (%)')
+        ax2.set_title('Akurasi Random Forest + SMOTE berdasarkan Alpha Chi-Square')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels([str(a) for a in chi_alphas])
+        ax2.set_ylim(0, 110)
+        ax2.legend()
+
+        def autolabel(bars):
+            for bar in bars:
+                height = bar.get_height()
+                ax = bar.axes
+                ax.annotate(f'{height:.2f}%',  # Format sebagai persentase
+                            xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3),  # Offset teks
+                            textcoords="offset points",
+                            ha='center', va='bottom',
+                            fontsize=9)
+
+        autolabel(bars1)
+        autolabel(bars2)
+        st.pyplot(fig2)
+
+        # Confusion matrix Chi-Square
+        st.markdown("#### Confusion Matrix Chi-Square")
+        cols = st.columns(len(chi_alphas))
+        for i, col in enumerate(cols):
+            with col:
+                y_true, y_pred, split = best_cm_chi[i]
+                cm = confusion_matrix(y_true, y_pred, labels=[-1, 0, 1])
+                fig_cm, ax_cm = plt.subplots()
+                sns.heatmap(cm, annot=True, fmt="d", cmap='Blues' if split == '90:10' else 'Greens',
+                            xticklabels=["Negatif", "Netral", "Positif"],
+                            yticklabels=["Negatif", "Netral", "Positif"],
+                            cbar=False, ax=ax_cm)
+                ax_cm.set_title(f'Alpha {chi_alphas[i]} ({split})')
+                ax_cm.set_xlabel("Predicted")
+                ax_cm.set_ylabel("Actual")
+                st.pyplot(fig_cm)
+
+        # ==================================================
+        # Information Gain TANPA kelas netral (Binary Class)
+        # ==================================================
+        st.markdown("### Hasil Information Gain + SMOTE (2 Kelas)")
+
+        # Filter hanya label -1 dan 1
+        mask_bin = y.isin([-1, 1])
+        y_bin = y[mask_bin]
+        X_ig_bin = X_df[mask_bin]  # Gunakan TF-IDF sebagai dasar IG
+
+        ig_thresholds = [0.001, 0.0025, 0.005]
+        ig_features_bin = [info_gain_selection(X_ig_bin, y_bin, threshold=t) for t in ig_thresholds]
+        X_ig_selected_bin = [X_ig_bin[feat] for feat in ig_features_bin]
+
+        acc90_ig_bin, acc80_ig_bin, best_cm_ig_bin = evaluasi_smote(X_ig_selected_bin, y_bin)
+
+        # Visualisasi grafik
+        x = np.arange(len(ig_thresholds))
+        fig, ax = plt.subplots(figsize=(10, 5))
+        bars1 = ax.bar(x - width/2, [a * 100 for a in acc90_ig_bin], width, label='90:10', color='blue')
+        bars2 = ax.bar(x + width/2, [a * 100 for a in acc80_ig_bin], width, label='80:20', color='green')
+
+        ax.set_xlabel('Threshold IG')
+        ax.set_ylabel('Akurasi (%)')
+        ax.set_title('Akurasi Random Forest + SMOTE berdasarkan IG Threshold (2 Kelas)')
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(a) for a in ig_thresholds])
+        ax.set_ylim(0, 110)
+        ax.legend()
+        autolabel(bars1)
+        autolabel(bars2)
+        st.pyplot(fig)
+
+        # Confusion matrix IG Binary
+        st.markdown("#### Confusion Matrix Information Gain (2 Kelas)")
+        cols = st.columns(len(ig_thresholds))
+        for i, col in enumerate(cols):
+            with col:
+                y_true, y_pred, split = best_cm_ig_bin[i]
+                cm = confusion_matrix(y_true, y_pred, labels=[-1, 1])
+                fig_cm, ax_cm = plt.subplots()
+                sns.heatmap(cm, annot=True, fmt="d", cmap='Blues' if split == '90:10' else 'Greens',
+                            xticklabels=["Negatif", "Positif"],
+                            yticklabels=["Negatif", "Positif"],
+                            cbar=False, ax=ax_cm)
+                ax_cm.set_title(f'Threshold {ig_thresholds[i]} ({split})')
+                ax_cm.set_xlabel("Predicted")
+                ax_cm.set_ylabel("Actual")
+                st.pyplot(fig_cm)
+        
+        # ====================
+        # Pengujian 4 Dua Kelas (Chi-Square + SMOTE)
+        # ====================
+        st.markdown("### Hasil Chi-Square + SMOTE (2 Kelas)")
+
+        # Filter data untuk hanya dua kelas: -1 dan 1
+        mask = y.isin([-1, 1])
+        y_bin = y[mask]
+        count_df_bin = count_df.loc[mask]
+
+        # Lakukan seleksi fitur untuk masing-masing alpha
+        chi_features_bin = [chi_square_selection(count_df_bin, y_bin, alpha=a) for a in chi_alphas]
+        X_chi_bin_selected = [count_df_bin[feat] for feat in chi_features_bin]
+
+        # Evaluasi dengan SMOTE
+        acc90_chi_bin, acc80_chi_bin, best_cm_chi_bin = evaluasi_smote(X_chi_bin_selected, y_bin)
+
+        # Visualisasi akurasi Chi-Square Tanpa Netral
+        x = np.arange(len(chi_alphas))
+        fig3, ax3 = plt.subplots(figsize=(10, 5))
+        bars1_bin = ax3.bar(x - width/2, [a * 100 for a in acc90_chi_bin], width, label='90:10', color='blue')
+        bars2_bin = ax3.bar(x + width/2, [a * 100 for a in acc80_chi_bin], width, label='80:20', color='green')
+
+        ax3.set_xlabel('Alpha Chi-Square')
+        ax3.set_ylabel('Akurasi (%)')
+        ax3.set_title('Akurasi RF + SMOTE 2 Kelas berdasarkan Alpha Chi-Square')
+        ax3.set_xticks(x)
+        ax3.set_xticklabels([str(a) for a in chi_alphas])
+        ax3.set_ylim(0, 110)
+        ax3.legend()
+
+        autolabel(bars1_bin)
+        autolabel(bars2_bin)
+        st.pyplot(fig3)
+
+        # Confusion matrix Chi-Square Tanpa Netral
+        st.markdown("#### Confusion Matrix Chi-Square (2 Kelas)")
+        cols_bin = st.columns(len(chi_alphas))
+        for i, col in enumerate(cols_bin):
+            with col:
+                y_true, y_pred, split = best_cm_chi_bin[i]
+                cm = confusion_matrix(y_true, y_pred, labels=[-1, 1])
+                fig_cm_bin, ax_cm_bin = plt.subplots()
+                sns.heatmap(cm, annot=True, fmt="d", cmap='Blues' if split == '90:10' else 'Greens',
+                            xticklabels=["Negatif", "Positif"],
+                            yticklabels=["Negatif", "Positif"],
+                            cbar=False, ax=ax_cm_bin)
+                ax_cm_bin.set_title(f'Alpha {chi_alphas[i]} ({split})')
+                ax_cm_bin.set_xlabel("Predicted")
+                ax_cm_bin.set_ylabel("Actual")
+                st.pyplot(fig_cm_bin)
+
+elif menu == "Report":
+    st.subheader("Perbandingan Akurasi Semua Pengujian (1, 2, dan 3)")
+
+    # Data akurasi (ganti dengan hasil aktual jika sudah tersedia)
+    data = {
+        "Pengujian": [
+            "P1 (90:10)", "P1 (80:20)",
+            "P2 IG 0.001 (90:10)", "P2 IG 0.0025 (90:10)", "P2 IG 0.005 (90:10)",
+            "P2 IG 0.001 (80:20)", "P2 IG 0.0025 (80:20)", "P2 IG 0.005 (80:20)",
+            "P2 Chi2 0.001 (90:10)", "P2 Chi2 0.0025 (90:10)", "P2 Chi2 0.005 (90:10)",
+            "P2 Chi2 0.001 (80:20)", "P2 Chi2 0.0025 (80:20)", "P2 Chi2 0.005 (80:20)",
+            "P3 Union (90:10)", "P3 Union (80:20)",
+            "P3 Intersection (90:10)", "P3 Intersection (80:20)"
+        ],
+        "Akurasi": [
+            0.753, 0.773,
+            0.799, 0.7835, 0.7577,
+            0.7752, 0.77, 0.7674,
+            0.7371, 0.7371, 0.732,
+            0.7261, 0.7235, 0.7106,
+            0.773, 0.783,
+            0.711, 0.70
+        ],
+        "Split": [
+            "90:10", "80:20",
+            "90:10", "90:10", "90:10",
+            "80:20", "80:20", "80:20",
+            "90:10", "90:10", "90:10",
+            "80:20", "80:20", "80:20",
+            "90:10", "80:20",
+            "90:10", "80:20"
+        ]
+    }
+
+    df = pd.DataFrame(data)
+
+    # Warna berdasarkan split
+    colors = df["Split"].map({"90:10": "blue", "80:20": "green"})
+
+    # Plotting
+    fig, ax = plt.subplots(figsize=(15, 6))
+    bars = ax.bar(df["Pengujian"], df["Akurasi"], color=colors)
+
+    ax.set_xlabel("Pengujian")
+    ax.set_ylabel("Akurasi")
+    ax.set_title("Perbandingan Hasil Akurasi Pengujian 1,2 dan 3")
+    ax.set_ylim(0, 1.05)
+    ax.set_xticklabels(df["Pengujian"], rotation=45, ha='right')
+
+    # Tambahkan nilai persentase di atas batang
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01,
+                f"{height*100:.1f}%", ha='center', va='bottom', fontsize=9)
+
+    # Legenda
+    legend_elements = [
+        Patch(facecolor='blue', label='Split 90:10'),
+        Patch(facecolor='green', label='Split 80:20')
+    ]
+    ax.legend(handles=legend_elements)
+
+    st.pyplot(fig)
+
+    st.subheader("Perbandingan Hasil Akurasi Pengujian 4 Seleksi Fitur + SMOTE (2 Kelas vs 3 Kelas)")
+
+    # Data Gabungan
+    data = {
+        "Pengujian": [
+            "IG 0.001 (90:10)", "IG 0.0025 (90:10)", "IG 0.005 (90:10)",
+            "IG 0.001 (80:20)", "IG 0.0025 (80:20)", "IG 0.005 (80:20)",
+            "Chi2 0.001 (90:10)", "Chi2 0.0025 (90:10)", "Chi2 0.005 (90:10)",
+            "Chi2 0.001 (80:20)", "Chi2 0.0025 (80:20)", "Chi2 0.005 (80:20)"
+        ] * 2,
+        "Split": (["90:10"] * 3 + ["80:20"] * 3 + ["90:10"] * 3 + ["80:20"] * 3) * 2,
+        "Kelas": ["3 Kelas"] * 12 + ["2 Kelas"] * 12,
+        "Akurasi": [
+            # 3 Kelas
+            0.7474, 0.7526, 0.6959,
+            0.739, 0.7416, 0.6899,
+            0.5412, 0.5619, 0.5773,
+            0.5736, 0.5788, 0.5891,
+            # 2 Kelas
+            0.7663, 0.7717, 0.7717,
+            0.7984, 0.7847, 0.8147,
+            0.6848, 0.6902, 0.7120,
+            0.733, 0.7248, 0.752
+        ]
+    }
+
+    df = pd.DataFrame(data)
+
+    # Label untuk sumbu X
+    df["Label"] = df["Pengujian"] + " (" + df["Split"] + ") - " + df["Kelas"]
+
+    # Warna berdasarkan Split dan Kelas
+    def get_color(row):
+        if row["Kelas"] == "2 Kelas":
+            return "skyblue" if row["Split"] == "90:10" else "lightgreen"
+        else:
+            return "blue" if row["Split"] == "90:10" else "green"
+
+    df["Color"] = df.apply(get_color, axis=1)
+
+    # Plotting
+    fig, ax = plt.subplots(figsize=(18, 7))
+    bars = ax.bar(df["Label"], df["Akurasi"], color=df["Color"])
+
+    ax.set_xlabel("Pengujian")
+    ax.set_ylabel("Akurasi")
+    ax.set_title("Perbandingan Akurasi SMOTE + Seleksi Fitur untuk 2 Kelas dan 3 Kelas")
+    ax.set_ylim(0, 1.05)
+    ax.set_xticklabels(df["Label"], rotation=45, ha='right')
+
+    # Tampilkan nilai akurasi di atas batang
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2, height + 0.01,
+                f"{height*100:.1f}%", ha='center', va='bottom', fontsize=9)
+
+    # Legenda
+    legend_elements = [
+        Patch(facecolor='blue', label='3 Kelas - Split 90:10'),
+        Patch(facecolor='green', label='3 Kelas - Split 80:20'),
+        Patch(facecolor='skyblue', label='2 Kelas - Split 90:10'),
+        Patch(facecolor='lightgreen', label='2 Kelas - Split 80:20')
+    ]
+    ax.legend(handles=legend_elements)
+
+    st.pyplot(fig)
 
 # === PREDIKSI BARU ===
 elif menu == "Prediksi Baru":
