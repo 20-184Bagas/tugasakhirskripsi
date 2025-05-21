@@ -399,115 +399,122 @@ elif menu == "Pengujian":
     elif opsi_pengujian == "Pengujian 3 (Ensemble Seleksi Fitur)":
         st.subheader("Pengujian 3: Ensemble Feature Selection")
 
-        # --- Langkah 1: Seleksi fitur ---
-        ig_features = info_gain_selection(X_df, y)          # IG dari TF-IDF
-        chi_features = chi_square_selection(count_df, y)    # Chi-Square dari CountVectorizer
+        # --- Langkah 1: Seleksi fitur dengan threshold tetap (0.001) ---
+        threshold_ig = 0.001
+        alpha_chi = 0.001
+
+        if 'ensemble_ig_features' not in st.session_state:
+            st.session_state['ensemble_ig_features'] = info_gain_selection(X_df, y, threshold=threshold_ig)
+
+        if 'ensemble_chi_features' not in st.session_state:
+            st.session_state['ensemble_chi_features'] = chi_square_selection(count_df, y, alpha=alpha_chi)
+
+        ig_features = st.session_state['ensemble_ig_features']
+        chi_features = st.session_state['ensemble_chi_features']
+
+        # --- Langkah 2: Buat DataFrame dari hasil seleksi fitur ---
+        X_ig_selected = X_df[ig_features]
+        X_chi_selected = count_df[chi_features]
 
         # Ensemble features
-        intersection_features = list(set(ig_features) & set(chi_features))
-        union_features = list(set(ig_features) | set(chi_features))
+        intersection_features = list(set(X_ig_selected.columns) & set(X_chi_selected.columns))
+        union_features = list(set(X_ig_selected.columns) | set(X_chi_selected.columns))
 
-        # --- Langkah 2: Gabungkan fitur dari dua sumber sesuai hasil ensemble ---
-        def ambil_fitur_terpilih(feature_list):
-            # Ambil kolom dari X_df dan count_df jika nama fitur cocok
-            tfidf_part = X_df[[feat for feat in feature_list if feat in X_df.columns]]
-            count_part = count_df[[feat for feat in feature_list if feat in count_df.columns]]
-            return pd.concat([tfidf_part, count_part], axis=1)
+        X_intersection = pd.concat([
+            X_ig_selected[intersection_features],
+            X_chi_selected[intersection_features]
+        ], axis=1)
 
-        X_intersection = ambil_fitur_terpilih(intersection_features)
-        X_union = ambil_fitur_terpilih(union_features)
+        X_union = pd.concat([
+            X_ig_selected.reindex(columns=union_features, fill_value=0),
+            X_chi_selected.reindex(columns=union_features, fill_value=0)
+        ], axis=1)
 
         # --- Langkah 3: Fungsi evaluasi model ---
         def evaluasi_model(X, y, judul):
             try:
-                # Split 90:10 dan 80:20
-                X_train90, X_test10, y_train90, y_test10 = train_test_split(X, y, test_size=0.1, random_state=42)
-                X_train80, X_test20, y_train80, y_test20 = train_test_split(X, y, test_size=0.2, random_state=42)
-                
+                X_train90, X_test10, y_train90, y_test10 = train_test_split(X, y, test_size=0.1, random_state=42, stratify=y)
+                X_train80, X_test20, y_train80, y_test20 = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
                 model = RandomForestClassifier(n_estimators=100, random_state=42)
 
-                # Train & predict
                 model.fit(X_train90, y_train90)
                 y_pred10 = model.predict(X_test10)
                 report90 = classification_report(y_test10, y_pred10, output_dict=True)
+                acc90 = report90["accuracy"]
 
                 model.fit(X_train80, y_train80)
                 y_pred20 = model.predict(X_test20)
                 report80 = classification_report(y_test20, y_pred20, output_dict=True)
+                acc80 = report80["accuracy"]
 
-                # Layout hasil
+                best_acc = max(acc90, acc80)
+                st.session_state[f"{judul}_best_accuracy"] = best_acc
+
                 col1, col2 = st.columns(2)
                 with col1:
-                    # Grafik metrik
                     fig, ax = plt.subplots(figsize=(7, 5))
                     metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
                     values90 = [
-                        round(report90['accuracy'] * 100, 1),
+                        round(acc90 * 100, 1),
                         round(report90['macro avg']['precision'] * 100, 1),
                         round(report90['macro avg']['recall'] * 100, 1),
                         round(report90['macro avg']['f1-score'] * 100, 1)
                     ]
                     values80 = [
-                        round(report80['accuracy'] * 100, 1),
+                        round(acc80 * 100, 1),
                         round(report80['macro avg']['precision'] * 100, 1),
                         round(report80['macro avg']['recall'] * 100, 1),
                         round(report80['macro avg']['f1-score'] * 100, 1)
                     ]
                     x = np.arange(len(metrics))
                     width = 0.35
+
                     bars90 = ax.bar(x - width/2, values90, width, label='90:10', color='blue', edgecolor='black')
                     bars80 = ax.bar(x + width/2, values80, width, label='80:20', color='green', edgecolor='black')
 
-                    ax.set_title('Perbandingan Klasifikasi pada Pembagian Data 90:10 dan 80:20',
-                                pad=20, fontsize=14, fontweight='bold')
-                    ax.set_xticks(x)
-                    ax.set_xticklabels(metrics, fontsize=12)
-                    ax.set_ylabel('Percentage (%)', fontsize=12)
-                    ax.set_ylim(0, 110)
-                    ax.grid(axis='y', linestyle='--', alpha=0.3)
+                    # Tambahkan nilai persentase di atas bar
+                    for bar in bars90:
+                        height = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.1f}%', ha='center', va='bottom', fontsize=9)
 
-                    for bars in [bars90, bars80]:
-                        for bar in bars:
-                            height = bar.get_height()
-                            ax.text(bar.get_x() + bar.get_width()/2.,
-                                    height + 1,
-                                    f'{height:.1f}%',
-                                    ha='center',
-                                    va='bottom',
-                                    color='black',
-                                    fontsize=11)
-                    ax.legend(loc='upper right', framealpha=1, shadow=True)
+                    for bar in bars80:
+                        height = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.1f}%', ha='center', va='bottom', fontsize=9)
+
+                    ax.set_title(f'Grafik Klasifikasi ({judul})')
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(metrics)
+                    ax.set_ylim(0, 110)
+                    ax.legend()
                     st.pyplot(fig)
 
                 with col2:
-                    # Confusion matrix dari split terbaik
-                    best_acc = max(report90['accuracy'], report80['accuracy'])
-                    if report90['accuracy'] >= report80['accuracy']:
+                    if acc90 >= acc80:
                         cm = confusion_matrix(y_test10, y_pred10, labels=[-1, 0, 1])
-                        cm_color = 'Blues'
-                        split_label = '90:10'
+                        split = "90:10"
+                        cmap = "Blues"
                     else:
                         cm = confusion_matrix(y_test20, y_pred20, labels=[-1, 0, 1])
-                        cm_color = 'Greens'
-                        split_label = '80:20'
+                        split = "80:20"
+                        cmap = "Greens"
 
                     fig_cm, ax = plt.subplots(figsize=(6, 4))
-                    sns.heatmap(cm, annot=True, fmt="d", cmap=cm_color,
+                    sns.heatmap(cm, annot=True, fmt="d", cmap=cmap,
                                 xticklabels=["Negatif", "Netral", "Positif"],
                                 yticklabels=["Negatif", "Netral", "Positif"], ax=ax)
-                    ax.set_title(f'Confusion Matrix ({split_label})\nAkurasi: {best_acc*100:.1f}%', 
-                                fontsize=12)
+                    ax.set_title(f'Confusion Matrix ({judul})\nSplit: {split}, Akurasi: {best_acc*100:.1f}%', fontsize=12)
                     st.pyplot(fig_cm)
 
             except Exception as e:
                 st.error(f"Terjadi error: {str(e)}")
 
         # --- Langkah 4: Evaluasi intersection dan union ---
-        st.markdown("### Ensemble Intersection (IG ∩ Chi-Square)")
-        evaluasi_model(X_intersection, y, "Intersection")
+        st.markdown(f"### Ensemble Intersection (IG ∩ Chi-Square) | Threshold IG = {threshold_ig}, Alpha Chi = {alpha_chi}")
+        evaluasi_model(X_intersection, y, "ensemble_intersection")
 
-        st.markdown("### Ensemble Union (IG ∪ Chi-Square)")
-        evaluasi_model(X_union, y, "Union")
+        st.markdown(f"### Ensemble Union (IG ∪ Chi-Square) | Threshold IG = {threshold_ig}, Alpha Chi = {alpha_chi}")
+        evaluasi_model(X_union, y, "ensemble_union")
 
     elif opsi_pengujian == "Pengujian 4 (Masing-masing Seleksi Fitur dengan SMOTE)":
         st.subheader("Pengujian 4: Masing-masing Seleksi Fitur dengan SMOTE")
