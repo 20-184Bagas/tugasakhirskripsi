@@ -399,24 +399,38 @@ elif menu == "Pengujian":
     elif opsi_pengujian == "Pengujian 3 (Ensemble Seleksi Fitur)":
         st.subheader("Pengujian 3: Ensemble Feature Selection")
 
-        # --- Langkah 1: Seleksi fitur dengan threshold tetap (0.001) ---
         threshold_ig = 0.001
         alpha_chi = 0.001
 
-        if 'ensemble_ig_features' not in st.session_state:
-            st.session_state['ensemble_ig_features'] = info_gain_selection(X_df, y, threshold=threshold_ig)
+        # --- HITUNG INFORMATION GAIN LANGSUNG ---
+        def entropy(vec):
+            probs = vec.value_counts(normalize=True)
+            return -np.sum(probs * np.log2(probs + 1e-9))  # +1e-9 utk hindari log(0)
 
-        if 'ensemble_chi_features' not in st.session_state:
-            st.session_state['ensemble_chi_features'] = chi_square_selection(count_df, y, alpha=alpha_chi)
+        total_entropy = entropy(y)
+        ig_scores = {}
+        for col in X_df.columns:
+            values = X_df[col]
+            weighted_entropy = 0
+            for v in values.unique():
+                subset_y = y[values == v]
+                weighted_entropy += len(subset_y) / len(y) * entropy(subset_y)
+            ig = total_entropy - weighted_entropy
+            if ig >= threshold_ig:
+                ig_scores[col] = ig
 
-        ig_features = st.session_state['ensemble_ig_features']
-        chi_features = st.session_state['ensemble_chi_features']
+        ig_features = list(ig_scores.keys())
 
-        # --- Langkah 2: Buat DataFrame dari hasil seleksi fitur ---
+        # --- HITUNG CHI-SQUARE LANGSUNG ---
+        scores, _ = chi2(count_df, y)
+        df_chi = pd.DataFrame({"Fitur": count_df.columns, "Chi2": scores})
+        chi_crit = chi2_table.ppf(1 - alpha_chi, df=len(set(y)) - 1)
+        chi_features = df_chi[df_chi["Chi2"] >= chi_crit]["Fitur"].tolist()
+
+        # --- AMBIL FITUR DARI IG DAN CHI ---
         X_ig_selected = X_df[ig_features]
         X_chi_selected = count_df[chi_features]
 
-        # Ensemble features
         intersection_features = list(set(X_ig_selected.columns) & set(X_chi_selected.columns))
         union_features = list(set(X_ig_selected.columns) | set(X_chi_selected.columns))
 
@@ -430,7 +444,7 @@ elif menu == "Pengujian":
             X_chi_selected.reindex(columns=union_features, fill_value=0)
         ], axis=1)
 
-        # --- Langkah 3: Fungsi evaluasi model ---
+        # --- FUNGSI EVALUASI ---
         def evaluasi_model(X, y, judul):
             try:
                 X_train90, X_test10, y_train90, y_test10 = train_test_split(X, y, test_size=0.1, random_state=42, stratify=y)
@@ -473,7 +487,6 @@ elif menu == "Pengujian":
                     bars90 = ax.bar(x - width/2, values90, width, label='90:10', color='blue', edgecolor='black')
                     bars80 = ax.bar(x + width/2, values80, width, label='80:20', color='green', edgecolor='black')
 
-                    # Tambahkan nilai persentase di atas bar
                     for bar in bars90:
                         height = bar.get_height()
                         ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.1f}%', ha='center', va='bottom', fontsize=9)
@@ -509,13 +522,13 @@ elif menu == "Pengujian":
             except Exception as e:
                 st.error(f"Terjadi error: {str(e)}")
 
-        # --- Langkah 4: Evaluasi intersection dan union ---
+        # --- EVALUASI ---
         st.markdown(f"### Ensemble Intersection (IG ∩ Chi-Square) | Threshold IG = {threshold_ig}, Alpha Chi = {alpha_chi}")
         evaluasi_model(X_intersection, y, "ensemble_intersection")
 
         st.markdown(f"### Ensemble Union (IG ∪ Chi-Square) | Threshold IG = {threshold_ig}, Alpha Chi = {alpha_chi}")
         evaluasi_model(X_union, y, "ensemble_union")
-
+        
     elif opsi_pengujian == "Pengujian 4 (Masing-masing Seleksi Fitur dengan SMOTE)":
         st.subheader("Pengujian 4: Masing-masing Seleksi Fitur dengan SMOTE")
 
