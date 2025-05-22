@@ -402,41 +402,41 @@ elif menu == "Pengujian":
         threshold_ig = 0.001
         alpha_chi = 0.001
 
-        # --- HITUNG INFORMATION GAIN LANGSUNG ---
+        # --- HITUNG ENTROPY & IG (stabil) ---
         def entropy(vec):
             probs = vec.value_counts(normalize=True)
-            return -np.sum(probs * np.log2(probs + 1e-9))  # +1e-9 utk hindari log(0)
+            return -np.sum(probs * np.log2(probs + 1e-9))
 
         total_entropy = entropy(y)
         ig_scores = {}
-        for col in X_df.columns:
+        for col in sorted(X_df.columns):  # pastikan urutan fitur stabil
             values = X_df[col]
             weighted_entropy = 0
-            for v in values.unique():
+            for v in sorted(values.unique()):  # pastikan nilai kategori stabil
                 subset_y = y[values == v]
                 weighted_entropy += len(subset_y) / len(y) * entropy(subset_y)
             ig = total_entropy - weighted_entropy
             if ig >= threshold_ig:
                 ig_scores[col] = ig
 
-        ig_features = list(ig_scores.keys())
+        ig_features = sorted(ig_scores.keys())
 
-        # --- HITUNG CHI-SQUARE LANGSUNG ---
+        # --- HITUNG CHI-SQUARE (menggunakan scikit-learn) ---
         scores, _ = chi2(count_df, y)
         df_chi = pd.DataFrame({"Fitur": count_df.columns, "Chi2": scores})
         chi_crit = chi2_table.ppf(1 - alpha_chi, df=len(set(y)) - 1)
-        chi_features = df_chi[df_chi["Chi2"] >= chi_crit]["Fitur"].tolist()
+        chi_features = sorted(df_chi[df_chi["Chi2"] >= chi_crit]["Fitur"].tolist())
 
-        # --- AMBIL FITUR DARI IG DAN CHI ---
+        # --- PERSIAPAN FITUR TERPILIH ---
         X_ig_selected = X_df[ig_features]
         X_chi_selected = count_df[chi_features]
 
-        intersection_features = list(set(X_ig_selected.columns) & set(X_chi_selected.columns))
-        union_features = list(set(X_ig_selected.columns) | set(X_chi_selected.columns))
+        intersection_features = sorted(list(set(ig_features) & set(chi_features)))
+        union_features = sorted(list(set(ig_features) | set(chi_features)))
 
         X_intersection = pd.concat([
-            X_ig_selected[intersection_features],
-            X_chi_selected[intersection_features]
+            X_ig_selected.reindex(columns=intersection_features, fill_value=0),
+            X_chi_selected.reindex(columns=intersection_features, fill_value=0)
         ], axis=1)
 
         X_union = pd.concat([
@@ -461,9 +461,6 @@ elif menu == "Pengujian":
                 y_pred20 = model.predict(X_test20)
                 report80 = classification_report(y_test20, y_pred20, output_dict=True)
                 acc80 = report80["accuracy"]
-
-                best_acc = max(acc90, acc80)
-                st.session_state[f"{judul}_best_accuracy"] = best_acc
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -507,16 +504,18 @@ elif menu == "Pengujian":
                         cm = confusion_matrix(y_test10, y_pred10, labels=[-1, 0, 1])
                         split = "90:10"
                         cmap = "Blues"
+                        acc_final = acc90
                     else:
                         cm = confusion_matrix(y_test20, y_pred20, labels=[-1, 0, 1])
                         split = "80:20"
                         cmap = "Greens"
+                        acc_final = acc80
 
                     fig_cm, ax = plt.subplots(figsize=(6, 4))
                     sns.heatmap(cm, annot=True, fmt="d", cmap=cmap,
                                 xticklabels=["Negatif", "Netral", "Positif"],
                                 yticklabels=["Negatif", "Netral", "Positif"], ax=ax)
-                    ax.set_title(f'Confusion Matrix ({judul})\nSplit: {split}, Akurasi: {best_acc*100:.1f}%', fontsize=12)
+                    ax.set_title(f'Confusion Matrix ({judul})\nSplit: {split}, Akurasi: {acc_final*100:.1f}%', fontsize=12)
                     st.pyplot(fig_cm)
 
             except Exception as e:
@@ -524,10 +523,10 @@ elif menu == "Pengujian":
 
         # --- EVALUASI ---
         st.markdown(f"### Ensemble Intersection (IG ∩ Chi-Square) | Threshold IG = {threshold_ig}, Alpha Chi = {alpha_chi}")
-        evaluasi_model(X_intersection, y, "ensemble_intersection")
+        evaluasi_model(X_intersection, y, "Ensemble Intersection")
 
         st.markdown(f"### Ensemble Union (IG ∪ Chi-Square) | Threshold IG = {threshold_ig}, Alpha Chi = {alpha_chi}")
-        evaluasi_model(X_union, y, "ensemble_union")
+        evaluasi_model(X_union, y, "Ensemble Union")
         
     elif opsi_pengujian == "Pengujian 4 (Masing-masing Seleksi Fitur dengan SMOTE)":
         st.subheader("Pengujian 4: Masing-masing Seleksi Fitur dengan SMOTE")
