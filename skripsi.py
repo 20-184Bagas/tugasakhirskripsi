@@ -192,7 +192,7 @@ elif menu == "Pengujian":
         f1_90 = report_90['macro avg']['f1-score']
         
         # Ubah ke format desimal 1 digit
-        scores_90 = [f"{acc_90*100:.1f}%", f"{prec_90*100:.1f}%", f"{rec_90*100:.1f}%", f"{f1_90*100:.1f}%"]
+        scores_90 = [f"{acc_90*100:.2f}%", f"{prec_90*100:.2f}%", f"{rec_90*100:.2f}%", f"{f1_90*100:.2f}%"]
         categories = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
 
         cm_90 = confusion_matrix(y_test_10, y_pred_10, labels=[-1, 0, 1])
@@ -234,7 +234,7 @@ elif menu == "Pengujian":
         f1_80 = report_80['macro avg']['f1-score']
         
         # Ubah ke format desimal 1 digit
-        scores_80 = [f"{acc_80*100:.1f}%", f"{prec_80*100:.1f}%", f"{rec_80*100:.1f}%", f"{f1_80*100:.1f}%"]
+        scores_80 = [f"{acc_80*100:.2f}%", f"{prec_80*100:.2f}%", f"{rec_80*100:.2f}%", f"{f1_80*100:.2f}%"]
 
         cm_80 = confusion_matrix(y_test_20, y_pred_20, labels=[-1, 0, 1])
 
