@@ -467,16 +467,16 @@ elif menu == "Pengujian":
                     fig, ax = plt.subplots(figsize=(7, 5))
                     metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
                     values90 = [
-                        round(acc90 * 100, 1),
-                        round(report90['macro avg']['precision'] * 100, 1),
-                        round(report90['macro avg']['recall'] * 100, 1),
-                        round(report90['macro avg']['f1-score'] * 100, 1)
+                        round(acc90 * 100, 2),
+                        round(report90['macro avg']['precision'] * 100, 2),
+                        round(report90['macro avg']['recall'] * 100, 2),
+                        round(report90['macro avg']['f1-score'] * 100, 2)
                     ]
                     values80 = [
-                        round(acc80 * 100, 1),
-                        round(report80['macro avg']['precision'] * 100, 1),
-                        round(report80['macro avg']['recall'] * 100, 1),
-                        round(report80['macro avg']['f1-score'] * 100, 1)
+                        round(acc80 * 100, 2),
+                        round(report80['macro avg']['precision'] * 100, 2),
+                        round(report80['macro avg']['recall'] * 100, 2),
+                        round(report80['macro avg']['f1-score'] * 100, 2)
                     ]
                     x = np.arange(len(metrics))
                     width = 0.35
@@ -486,11 +486,11 @@ elif menu == "Pengujian":
 
                     for bar in bars90:
                         height = bar.get_height()
-                        ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.1f}%', ha='center', va='bottom', fontsize=9)
+                        ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.2f}%', ha='center', va='bottom', fontsize=9)
 
                     for bar in bars80:
                         height = bar.get_height()
-                        ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.1f}%', ha='center', va='bottom', fontsize=9)
+                        ax.text(bar.get_x() + bar.get_width()/2, height + 1, f'{height:.2f}%', ha='center', va='bottom', fontsize=9)
 
                     ax.set_title(f'Grafik Klasifikasi ({judul})')
                     ax.set_xticks(x)
@@ -515,7 +515,7 @@ elif menu == "Pengujian":
                     sns.heatmap(cm, annot=True, fmt="d", cmap=cmap,
                                 xticklabels=["Negatif", "Netral", "Positif"],
                                 yticklabels=["Negatif", "Netral", "Positif"], ax=ax)
-                    ax.set_title(f'Confusion Matrix ({judul})\nSplit: {split}, Akurasi: {acc_final*100:.1f}%', fontsize=12)
+                    ax.set_title(f'Confusion Matrix ({judul})\nSplit: {split}, Akurasi: {acc_final*100:.2f}%', fontsize=12)
                     st.pyplot(fig_cm)
 
             except Exception as e:
@@ -794,13 +794,13 @@ elif menu == "Report":
             "P3 Intersection (90:10)", "P3 Intersection (80:20)"
         ],
         "Akurasi": [
-            0.753, 0.773,
-            0.799, 0.7835, 0.7577,
-            0.7752, 0.77, 0.7674,
-            0.7371, 0.7371, 0.732,
+            0.7526, 0.7726,
+            0.7990, 0.7835, 0.7577,
+            0.7752, 0.7700, 0.7674,
+            0.7371, 0.7371, 0.7320,
             0.7261, 0.7235, 0.7106,
-            0.784, 0.783,
-            0.701, 0.721
+            0.7835, 0.7829,
+            0.7010, 0.7209
         ],
         "Split": [
             "90:10", "80:20",
@@ -832,7 +832,7 @@ elif menu == "Report":
     for bar in bars:
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01,
-                f"{height*100:.1f}%", ha='center', va='bottom', fontsize=9)
+                f"{height*100:.2f}%", ha='center', va='bottom', fontsize=9)
 
     # Legenda
     legend_elements = [
@@ -897,7 +897,7 @@ elif menu == "Report":
     for bar in bars:
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2, height + 0.01,
-                f"{height*100:.1f}%", ha='center', va='bottom', fontsize=9)
+                f"{height*100:.2f}%", ha='center', va='bottom', fontsize=9)
 
     # Legenda
     legend_elements = [
