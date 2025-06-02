@@ -17,6 +17,7 @@ from sklearn.metrics import confusion_matrix
 import nltk
 from imblearn.over_sampling import SMOTE
 from matplotlib.patches import Patch
+nltk.download('stopwords')
 
 # === NORMALISASI KAMUS ===
 @st.cache_data
