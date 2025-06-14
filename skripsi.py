@@ -215,8 +215,8 @@ elif menu == "Pengujian":
             sns.heatmap(cm_90, annot=True, fmt="d", cmap="Blues",
                         xticklabels=["Negatif", "Netral", "Positif"],
                         yticklabels=["Negatif", "Netral", "Positif"], ax=ax_cm90)
-            ax_cm90.set_xlabel("Predicted Label")
-            ax_cm90.set_ylabel("True Label")
+            ax_cm90.set_xlabel("Predicted")
+            ax_cm90.set_ylabel("Actual")
             ax_cm90.set_title("Confusion Matrix (90:10)")
             st.pyplot(fig_cm90)
 
@@ -256,8 +256,8 @@ elif menu == "Pengujian":
             sns.heatmap(cm_80, annot=True, fmt="d", cmap="Greens",
                         xticklabels=["Negatif", "Netral", "Positif"],
                         yticklabels=["Negatif", "Netral", "Positif"], ax=ax_cm80)
-            ax_cm80.set_xlabel("Predicted Label")
-            ax_cm80.set_ylabel("True Label")
+            ax_cm80.set_xlabel("Predicted")
+            ax_cm80.set_ylabel("Actual")
             ax_cm80.set_title("Confusion Matrix (80:20)")
             st.pyplot(fig_cm80)
 
@@ -517,6 +517,8 @@ elif menu == "Pengujian":
                                 xticklabels=["Negatif", "Netral", "Positif"],
                                 yticklabels=["Negatif", "Netral", "Positif"], ax=ax)
                     ax.set_title(f'Confusion Matrix ({judul})\nSplit: {split}, Akurasi: {acc_final*100:.2f}%', fontsize=12)
+                    ax.set_xlabel("Predicted", fontsize=9)
+                    ax.set_ylabel("Actual", fontsize=9)
                     st.pyplot(fig_cm)
 
             except Exception as e:
